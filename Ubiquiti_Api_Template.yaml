@@ -1,0 +1,331 @@
+zabbix_export:
+  version: '5.4'
+  date: '2024-08-14T15:32:36Z'
+  groups:
+    -
+      uuid: 7df96b18c230490a9a0a9e2307226338
+      name: Templates
+  templates:
+    -
+      uuid: fe42c0626c2343fa972428851b0e4134
+      template: 'Ubiquiti  API'
+      name: 'Ubiquiti  API'
+      description: |
+        Zabbix 5.4
+        Doc Link: https://ubntwiki.com/products/software/unifi-controller/api
+      groups:
+        -
+          name: Templates
+      items:
+        -
+          uuid: 076354921b1044e3b4f02368a79aff9e
+          name: 'Discover UniFi Controller'
+          type: SCRIPT
+          key: unifi.controller
+          delay: 5m
+          trends: '0'
+          value_type: TEXT
+          params: |
+            var obj = JSON.parse(value);
+            host = obj.host;
+            port = obj.port;
+            user = obj.user;
+            password = obj.password;
+            
+            var response, login = new HttpRequest();
+            login.addHeader('Content-Type: application/json');
+            response = login.post(
+              'https://'+host+':'+port+'/api/login',
+              JSON.stringify({ username: user, password: password })
+            );
+            
+            if (login.getStatus() !== 200) {
+              throw 'Login failed with status code ' + login.getStatus() + ': ' + response;
+            }
+            try {
+              response = login.get('https://'+host+':'+port+'/api/stat/sites');
+              response = JSON.parse(response);
+            }
+            catch (error) {
+              throw 'No JSON Response';
+            }
+            sites = response.data;
+            return JSON.stringify(sites);
+          timeout: 5s
+          parameters:
+            -
+              name: host
+              value: '{HOST.CONN}'
+            -
+              name: password
+              value: '{$UNIFI_PASSWORD}'
+            -
+              name: port
+              value: '{$UNIFI_PORT}'
+            -
+              name: user
+              value: '{$UNIFI_USER}'
+          tags:
+            -
+              tag: Application
+              value: UniFi
+        -
+          uuid: fe10a7b3be6242c783a2df816c5f969e
+          name: 'Discover UniFi Sites'
+          type: SCRIPT
+          key: unifi.sites
+          delay: 5m
+          trends: '0'
+          value_type: TEXT
+          params: |
+            var obj = JSON.parse(value);
+            var host = obj.host;
+            var port = obj.port;
+            var user = obj.user;
+            var password = obj.password;
+            
+            var results = [];
+            
+            var login = new HttpRequest();
+            login.addHeader('Content-Type: application/json');
+            var response = login.post(
+              'https://'+host+':'+port+'/api/login',
+              JSON.stringify({ username: user, password: password })
+            );
+            
+            if (login.getStatus() !== 200) {
+              throw 'Login failed with status code ' + login.getStatus() + ': ' + response;
+            }
+            
+            try {
+              var sitesResponse = JSON.parse(login.get('https://'+host+':'+port+'/api/self/sites'));
+              
+                for (var i = 0; i < sitesResponse.data.length; i++) {
+                  var siteResponse = login.get('https://'+host+':'+port+'/api/s/' + sitesResponse.data[i].name + '/stat/device-basic');
+                  siteResponse = JSON.parse(siteResponse);
+                  results.push(siteResponse);
+                }
+            } catch (error) {
+              throw 'No JSON Response';
+            }
+            
+            return JSON.stringify(results);
+          timeout: 5s
+          parameters:
+            -
+              name: host
+              value: '{HOST.CONN}'
+            -
+              name: password
+              value: '{$UNIFI_PASSWORD}'
+            -
+              name: port
+              value: '{$UNIFI_PORT}'
+            -
+              name: user
+              value: '{$UNIFI_USER}'
+          tags:
+            -
+              tag: Application
+              value: UniFi
+      discovery_rules:
+        -
+          uuid: 0b2525ad7eb245fbb67e16709b3ba275
+          name: 'UniFi Controller Discovery'
+          type: DEPENDENT
+          key: unifi.controller.discovery
+          delay: '0'
+          item_prototypes:
+            -
+              uuid: aa79501bc298465cbbeb0d4ff761134e
+              name: 'Ubiquiti AP - {#DESC} - Aps Desconectados'
+              type: CALCULATED
+              key: 'disconnected[{#ID}]'
+              delay: 5m
+              params: '{#NUM_DISCONNECTED}'
+              preprocessing:
+                -
+                  type: STR_REPLACE
+                  parameters:
+                    - warning
+                    - '1'
+                -
+                  type: STR_REPLACE
+                  parameters:
+                    - ok
+                    - '0'
+            -
+              uuid: 2e04b4b69bc84e178349798c0ebd74d7
+              name: 'Ubiquiti AP - {#DESC} - Quantidade APs'
+              type: CALCULATED
+              key: 'num_ap[{#ID}]'
+              delay: 5m
+              params: '{#NUM_AP}'
+            -
+              uuid: f24387c394d2492b92417d768f2f16aa
+              name: 'Ubiquiti AP - {#DESC} - APs Pendentes'
+              type: CALCULATED
+              key: 'num_pending[{#ID}]'
+              delay: 5m
+              params: '{#NUM_PENDING}'
+            -
+              uuid: 1cebdbe5eb1c4649a7a0b1dfc295c7ac
+              name: 'Ubiquiti AP - {#DESC} - Usuários Conectados'
+              type: CALCULATED
+              key: 'num_user[{#ID}]'
+              delay: 5m
+              params: '{#NUM_USER}'
+            -
+              uuid: 82eec0ef8a4a4f23b206fac25ee668b0
+              name: 'Ubiquiti AP Região- {#DESC} - Status'
+              type: CALCULATED
+              key: 'status[{#ID}]'
+              delay: 5m
+              params: '{#STATUS}'
+              preprocessing:
+                -
+                  type: STR_REPLACE
+                  parameters:
+                    - warning
+                    - '1'
+                -
+                  type: STR_REPLACE
+                  parameters:
+                    - ok
+                    - '0'
+          master_item:
+            key: unifi.controller
+          lld_macro_paths:
+            -
+              lld_macro: '{#ID}'
+              path: '$.[''_id'']'
+            -
+              lld_macro: '{#DESC}'
+              path: '$.[''desc'']'
+            -
+              lld_macro: '{#NUM_USER}'
+              path: '$.[''num_user'']'
+            -
+              lld_macro: '{#SUBSYSTEM}'
+              path: '$.[''subsystem'']'
+            -
+              lld_macro: '{#NUM_AP}'
+              path: '$.[''num_ap'']'
+            -
+              lld_macro: '{#STATUS}'
+              path: '$.[''status'']'
+            -
+              lld_macro: '{#NUM_DISCONNECTED}'
+              path: '$.[''num_disconnected'']'
+            -
+              lld_macro: '{#NUM_PENDING}'
+              path: '$.[''num_pending'']'
+            -
+              lld_macro: '{#NUM_IOT}'
+              path: '$.[''num_iot'']'
+          preprocessing:
+            -
+              type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value); // Converte a string JSON em objeto JavaScript
+                  
+                  var results = [];
+                  
+                  for (var i = 0; i < data.length; i++) {
+                      var item = data[i];
+                  
+                      if (item.health && Array.isArray(item.health)) {
+                          for (var j = 0; j < item.health.length; j++) {
+                              var healthItem = item.health[j];
+                  
+                              if (healthItem.subsystem === 'wlan') {
+                                  // Adicionar o item 'health' ao resultado
+                                  results.push({
+                                      _id: item._id,
+                                      desc: item.desc,
+                                      num_user: healthItem.num_user,
+                                      num_guest: healthItem.num_guest,
+                                      num_iot: healthItem.num_iot,
+                                      tx_bytes_r: healthItem.tx_bytes_r,
+                                      rx_bytes_r: healthItem.rx_bytes_r,
+                                      status: healthItem.status,
+                                      num_ap: healthItem.num_ap,
+                                      num_adopted: healthItem.num_adopted,
+                                      num_disabled: healthItem.num_disabled,
+                                      num_disconnected: healthItem.num_disconnected,
+                                      num_pending: healthItem.num_pending
+                                  });
+                              }
+                          }
+                      }
+                  }
+                  
+                  return JSON.stringify(results);
+        -
+          uuid: fffa9d22ed2a41af82396ea888b8fe68
+          name: 'UniFi Sites Discovery'
+          type: DEPENDENT
+          key: unifi.sites.discovery
+          delay: '0'
+          item_prototypes:
+            -
+              uuid: 76757835bda541d0b8a4f71971a9b6d7
+              name: 'Ubiquiti Ap Sites - {#NAME}'
+              type: CALCULATED
+              key: 'id_[{#NAME}]'
+              delay: 5m
+              params: '{#STATE}'
+              trigger_prototypes:
+                -
+                  uuid: 3310c1ad0474478d801ca25cf1fb289a
+                  expression: 'last(/Ubiquiti  API/id_[{#NAME}])<1'
+                  name: 'Ubiquiti AP - {#NAME} - {#MAC} is Down'
+                  priority: HIGH
+          master_item:
+            key: unifi.sites
+          lld_macro_paths:
+            -
+              lld_macro: '{#NAME}'
+              path: '$.[''name'']'
+            -
+              lld_macro: '{#STATE}'
+              path: '$.[''state'']'
+            -
+              lld_macro: '{#MAC}'
+              path: '$.[''mac'']'
+          preprocessing:
+            -
+              type: JAVASCRIPT
+              parameters:
+                - |
+                  var data = JSON.parse(value); // Converte a string JSON em objeto JavaScript
+                  
+                  var results = [];
+                  
+                  for (var i = 0; i < data.length; i++) {
+                      var item = data[i];
+                  
+                      if (item.data) {
+                          for (var j = 0; j < item.data.length; j++) {
+                              var healthItem = item.data[j];
+                                  results.push({
+                                      mac: healthItem.mac,
+                                      name: healthItem.name,
+                                      state: healthItem.state,
+                                  });
+                          }
+                      }
+                  }
+                  
+                  return JSON.stringify(results);
+      macros:
+        -
+          macro: '{$UNIFI_PASSWORD}'
+          value: ''
+        -
+          macro: '{$UNIFI_PORT}'
+          value: ''
+        -
+          macro: '{$UNIFI_USER}'
+          value: 
